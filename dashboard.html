@@ -210,15 +210,22 @@
       const dims = {
         product: cf.dimension(d => d.product),
         date: cf.dimension(d => d.date),
+        series: cf.dimension(d => [d.product, d.date]),
         all: cf.dimension(d => d)
       };
 
       const productGroup = dims.product.group().reduceSum(d => d.return);
-      const totalReturnGroup = dims.date.group().reduceSum(d => d.return);
+      const seriesGroup = dims.series.group().reduceSum(d => d.return);
       const orderedProducts = productGroup.all()
         .slice()
         .sort((a, b) => b.value - a.value)
         .map(d => d.key);
+
+      const colorScale = d3.scaleOrdinal()
+        .domain(orderedProducts)
+        .range(orderedProducts.map((product, index) => (
+          product === 'Benchmark_Index' ? '#2f9e44' : d3.schemeTableau10[index % 10]
+        )));
 
       const barChart = new dc.BarChart('#bar-chart');
       barChart
@@ -242,39 +249,42 @@
       barChart.yAxis().tickFormat(d3.format('.0%'));
       barChart.xAxis().tickFormat(d => d);
 
-      const lineChart = new dc.CompositeChart('#line-chart');
+      const lineChart = new dc.SeriesChart('#line-chart');
       lineChart
         .width(960)
         .height(380)
         .margins({ top: 20, right: 20, bottom: 50, left: 60 })
-        .dimension(dims.date)
+        .chart(subChart => new dc.LineChart(subChart)
+          .curve(d3.curveMonotoneX)
+          .renderArea(false)
+          .renderDataPoints({ radius: 4, fillOpacity: 0.9, strokeOpacity: 0 })
+          .defined(d => d.value !== undefined && d.value !== null)
+        )
+        .dimension(dims.series)
+        .group(seriesGroup)
+        .seriesAccessor(d => d.key[0])
+        .keyAccessor(d => d.key[1])
+        .valueAccessor(d => d.value)
         .x(d3.scaleTime().domain(d3.extent(data, d => d.date)))
         .xUnits(d3.timeWeeks)
         .renderHorizontalGridLines(true)
         .renderVerticalGridLines(true)
         .elasticY(true)
         .brushOn(true)
-        .group(totalReturnGroup)
         .legend(dc.legend().x(70).y(10).itemHeight(15).gap(6))
+        .colorAccessor(d => d.key[0])
+        .colors(colorScale)
         .yAxisLabel('Weekly Return')
-        .xAxisLabel('Week Ending (Friday)');
-
-      const seriesCharts = orderedProducts.map((product, index) => {
-        const group = dims.date.group().reduceSum(d => (d.product === product ? d.return : 0));
-        return new dc.LineChart(lineChart)
-          .dimension(dims.date)
-          .group(group, product)
-          .defined(d => d.value !== undefined && d.value !== null)
-          .valueAccessor(d => d.value)
-          .renderArea(false)
-          .ordinalColors([d3.schemeTableau10[index % 10]])
-          .renderDataPoints({ radius: 4, fillOpacity: 0.9, strokeOpacity: 0 })
-          .title(d => `${product} | ${formatDate(d.key)}: ${formatPercent(d.value)}`);
-      });
-
-      lineChart.compose(seriesCharts);
+        .xAxisLabel('Week Ending (Friday)')
+        .title(d => `${d.key[0]} | ${formatDate(d.key[1])}: ${formatPercent(d.value)}`);
       lineChart.yAxis().tickFormat(d3.format('.1%'));
       lineChart.xAxis().tickFormat(d3.timeFormat('%m-%d'));
+      lineChart.on('pretransition.style', chart => {
+        chart.selectAll('path.line')
+          .attr('stroke-width', 2.5)
+          .attr('stroke-linecap', 'round')
+          .attr('fill', 'none');
+      });
 
       const dataCount = dc.dataCount('#data-count')
         .dimension(cf)
@@ -326,33 +336,51 @@
       }
 
       function wireLineInteractions(chart) {
-        chart.selectAll('g.sub').each(function (_, index) {
-          const product = orderedProducts[index];
-          const sub = d3.select(this);
-          sub.select('path.line')
-            .style('cursor', 'pointer')
-            .on('click', () => {
-              barChart.filter(product);
-              dc.redrawAll();
-            });
-
-          sub.selectAll('circle.dot')
-            .style('cursor', 'pointer')
-            .on('click', event => {
-              event.stopPropagation();
-              barChart.filter(product);
-              dc.redrawAll();
-            });
-        });
-
-        chart.selectAll('.dc-legend .dc-legend-item').style('cursor', 'pointer').on('click', (event, d) => {
-          event.preventDefault();
-          const product = d && (d.name || d);
-          if (product && orderedProducts.includes(product)) {
-            barChart.filter(product);
-            dc.redrawAll();
+        chart.selectAll('g.series').each(function (seriesData) {
+          const product = seriesData && seriesData.key;
+          if (!product || !orderedProducts.includes(product)) {
+            return;
           }
+
+          const seriesNode = d3.select(this);
+          seriesNode.select('path.line')
+            .style('cursor', 'pointer')
+            .on('click.series-filter', () => {
+              if (barChart.hasFilter(product) && barChart.filters().length === 1) {
+                barChart.filterAll();
+              } else {
+                barChart.filter(product);
+              }
+              dc.redrawAll();
+            });
+
+          seriesNode.selectAll('circle.dot')
+            .style('cursor', 'pointer')
+            .on('click.series-filter', event => {
+              event.stopPropagation();
+              if (barChart.hasFilter(product) && barChart.filters().length === 1) {
+                barChart.filterAll();
+              } else {
+                barChart.filter(product);
+              }
+              dc.redrawAll();
+            });
         });
+
+        chart.selectAll('.dc-legend .dc-legend-item')
+          .style('cursor', 'pointer')
+          .on('click.series-filter', (event, d) => {
+            event.preventDefault();
+            const product = d && (d.name || d);
+            if (product && orderedProducts.includes(product)) {
+              if (barChart.hasFilter(product) && barChart.filters().length === 1) {
+                barChart.filterAll();
+              } else {
+                barChart.filter(product);
+              }
+              dc.redrawAll();
+            }
+          });
       }
 
       barChart.on('filtered.pivot-table', renderTable);
@@ -376,6 +404,7 @@
 
       document.getElementById('reset-line').addEventListener('click', () => {
         lineChart.filterAll();
+        dims.series.filterAll();
         dims.date.filterAll();
         dc.redrawAll();
         renderTable();
