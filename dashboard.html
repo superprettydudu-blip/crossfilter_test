@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DC.js Crossfilter Bar + Line Chart</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crossfilter2/1.5.4/crossfilter.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dc/4.2.7/dc.min.js"></script>
+<link rel="stylesheet" href="../static/css/ds.css">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .chart { margin-bottom: 40px; }
+    #bar-chart, #line-chart { width: 100%; height: 350px; }
+    button { margin-top: 20px; padding: 8px 16px; }
+    #data-count { font-size: 14px; color: #555; }
+    #data-table table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    #data-table th, #data-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+    #data-table .dc-table-group { background: #f1f3f5; font-weight: bold; color: #495057; }
+    #data-table .dc-table-row:hover { background: #f8f9fa !important; }
+  </style>
+</head>
+<body>
+
+<h2>产品 Return 柱状图（按 Return 总和降序）</h2>
+<div id="bar-chart" class="chart"></div>
+<a class="reset" href="javascript:barChart.filterAll();barChart.filterAll();dc.redrawAll();">reset</a>
+<h2>各产品 Return 随时间变化（折线图）</h2>
+<div id="line-chart" class="chart"></div>
+<a class="reset" href="javascript:bar-chart.filterAll();bar-chart.filterAll();dc.redrawAll();">reset</a>
+
+
+// Product A（普通产品）
+  { date: "2025-01-01", product: "A", return: 100, benchmark: false },
+  { date: "2025-01-02", product: "A", return: 120, benchmark: false },
+  { date: "2025-01-03", product: "A", return: 110, benchmark: false },
+  { date: "2025-02-01", product: "A", return: 130, benchmark: false },
+
+  // Product B（普通产品）
+  { date: "2025-02-01", product: "B", return: 200, benchmark: false },
+  { date: "2025-02-02", product: "B", return: 180, benchmark: false },
+  { date: "2025-02-03", product: "B", return: 220, benchmark: false },
+  { date: "2025-03-01", product: "B", return: 195, benchmark: false },
+
+  // Product C（普通产品）
+  { date: "2025-03-01", product: "C", return: 80,  benchmark: false },
+  { date: "2025-03-02", product: "C", return: 90,  benchmark: false },
+  { date: "2025-03-03", product: "C", return: 85,  benchmark: false },
+
+  // 另一个 Benchmark（可多个）
+  { date: "2025-01-01", product: "Benchmark_Index", return: 105, benchmark: true },
+  { date: "2025-02-01", product: "Benchmark_Index", return: 198, benchmark: true },
+  { date: "2025-03-01", product: "Benchmark_Index", return: 192, benchmark: true }
+]
+.map(d => ({ ...d, date: new Date(d.date) }));  // 转成 Date 对象
+// ================== Crossfilter ==================
+const cf = crossfilter(data);
+const dims = {
+  product: cf.dimension(d => d.product),
+  date: cf.dimension(d => d.date),
+  all: cf.dimension(d => d)
+};
+
+// 预计算每个 product 的 return 总和，用于排序
+const productReturnSum = dims.product.group().reduceSum(d => d.return).all();
+productReturnSum.sort((a, b) => b.value - a.value);
+const orderedProducts = productReturnSum.map(d => d.key);
+
+// ================== Bar Chart (按 return 总和降序) ==================
+const barChart = new dc.BarChart("#bar-chart")
+  .width(600)
+  .height(300)
+  .dimension(dims.product)
+  .group(dims.product.group().reduceSum(d => d.return))
+  .x(d3.scaleBand().domain(orderedProducts))
+  .xUnits(dc.units.ordinal)
+  .ordering(d => -d.value)
+  .elasticY(true)
+  .margins({ top: 10, right: 50, bottom: 50, left: 50 })
+
+  .colorAccessor(d => {
+    if (d.key === 'Benchmark_Index') return 'benchmark_index';
+    return 'normal';
+  })
+  .colors(d3.scaleOrdinal()
+    .domain(['benchmark_index', 'benchmark', 'normal'])
+    .range(['#2ecc71', '#d63939', d3.schemeCategory10[0]])
+  );
+barChart.on('pretransition', chart => {
+  chart.selectAll('rect.bar').attr('fill', d => {
+    if (d.x === 'Benchmark_Index') {
+      return '#2ecc71'; // 绿色
+    } else {
+      return  '#d63939';
+    }
+  });
+  });
+// ================== Line Chart (修复：先创建，再 compose) ==================
+const lineChart = new dc.CompositeChart("#line-chart");
+
+// 先配置主图
+lineChart
+  .width(800)
+  .height(350)
+  .x(d3.scaleTime().domain(d3.extent(data, d => d.date)))
+  .xAxisLabel("Date")
+  .yAxisLabel("Return")
+  .elasticY(true)
+  .margins({ top: 10, right: 50, bottom: 50, left: 60 })
+  .brushOn(false)
+  .legend(dc.legend().x(60).y(20).itemHeight(13).gap(5));
+  
+
+// 动态生成每条产品折线图（关键：使用 lineChart 自身）
+lineChart.compose(
+  orderedProducts.map(product => {
+    const productGroup = dims.date.group().reduceSum(d => d.product === product ? d.return : 0);
+    return new dc.LineChart(lineChart)
+      .group(productGroup, product)
+      .renderArea(false)  // 关闭黑色填充
+      .renderDataPoints({ radius: 4, fillOpacity: 0.8 })
+      .colors(d3.schemeCategory10[orderedProducts.indexOf(product) % 10])
+      .title(d => `${product}: ${d.value}`);
+  })
+);
+lineChart.on('pretransition', chart => {
+  chart.selectAll('path.line')
+       .attr('stroke-width', 2.5)
+       .attr('stroke-linecap', 'round')
+       .attr('fill', 'none');
+       });
+// 可选：统一颜色
+// lineChart.on('pretransition', chart => {
+//   chart.selectAll('.line').attr('stroke', (d, i) => d3.schemeCategory10[i % 10]);
+// });
+// ------------------- 1. Data Count -------------------
+const dataCount = dc.dataCount('#data-count')
+  .dimension(cf)           // 整个 crossfilter
+  .group(cf.groupAll())    // 所有记录
+  .html({
+    some: '<strong>%filter-count</strong> 条已选（共 <strong>%total-count</strong> 条）' +
+          ' | <a href="javascript:dc.filterAll(); dc.redrawAll();">重置所有</a>',
+    all: '共 <strong>%total-count</strong> 条记录。点击图表开始过滤。'
+  });
