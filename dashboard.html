@@ -1,143 +1,387 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>DC.js Crossfilter Bar + Line Chart</title>
+  <title>周度 Return Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dc/4.2.7/dc.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crossfilter2/1.5.4/crossfilter.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dc/4.2.7/dc.min.js"></script>
-<link rel="stylesheet" href="../static/css/ds.css">
+  <link rel="stylesheet" href="../static/css/ds.css" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .chart { margin-bottom: 40px; }
-    #bar-chart, #line-chart { width: 100%; height: 350px; }
-    button { margin-top: 20px; padding: 8px 16px; }
-    #data-count { font-size: 14px; color: #555; }
-    #data-table table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    #data-table th, #data-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
-    #data-table .dc-table-group { background: #f1f3f5; font-weight: bold; color: #495057; }
-    #data-table .dc-table-row:hover { background: #f8f9fa !important; }
+    :root {
+      color-scheme: light;
+    }
+
+    body {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      margin: 24px;
+      color: #212529;
+      background: #fff;
+    }
+
+    h1 {
+      margin-bottom: 12px;
+      font-size: 28px;
+    }
+
+    h2 {
+      margin: 32px 0 12px;
+      font-size: 20px;
+      color: #2f3e46;
+    }
+
+    p.tip {
+      color: #6c757d;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .chart {
+      margin-bottom: 12px;
+      background: #fff;
+    }
+
+    #bar-chart,
+    #line-chart {
+      width: 100%;
+      height: 360px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding: 12px 16px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+    }
+
+    #data-count {
+      font-size: 14px;
+      color: #495057;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      padding: 6px 14px;
+      border: 1px solid #1971c2;
+      background: #228be6;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    button:hover {
+      background: #1864ab;
+    }
+
+    button.secondary {
+      background: #fff;
+      color: #1864ab;
+    }
+
+    button.secondary:hover {
+      background: #e7f5ff;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: #f1f3f5;
+      color: #343a40;
+      text-align: left;
+      padding: 8px 10px;
+    }
+
+    tbody td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #f1f3f5;
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: #f8f9fa;
+    }
+
+    .empty-state {
+      margin: 0;
+      color: #868e96;
+    }
   </style>
 </head>
 <body>
+  <h1>周度 Return Dashboard</h1>
 
-<h2>产品 Return 柱状图（按 Return 总和降序）</h2>
-<div id="bar-chart" class="chart"></div>
-<a class="reset" href="javascript:barChart.filterAll();barChart.filterAll();dc.redrawAll();">reset</a>
-<h2>各产品 Return 随时间变化（折线图）</h2>
-<div id="line-chart" class="chart"></div>
-<a class="reset" href="javascript:bar-chart.filterAll();bar-chart.filterAll();dc.redrawAll();">reset</a>
+  <section class="controls">
+    <div id="data-count"></div>
+    <div class="button-row">
+      <button id="reset-all" class="secondary">重置所有筛选</button>
+      <button id="reset-bar" class="secondary">重置产品筛选</button>
+      <button id="reset-line" class="secondary">重置时间筛选</button>
+    </div>
+  </section>
 
+  <section>
+    <h2>产品 Return 柱状图（按 Return 总和降序）</h2>
+    <div id="bar-chart" class="chart"></div>
+  </section>
 
-// Product A（普通产品）
-  { date: "2025-01-01", product: "A", return: 100, benchmark: false },
-  { date: "2025-01-02", product: "A", return: 120, benchmark: false },
-  { date: "2025-01-03", product: "A", return: 110, benchmark: false },
-  { date: "2025-02-01", product: "A", return: 130, benchmark: false },
+  <section>
+    <h2>各产品 Return 周度走势</h2>
+    <div id="line-chart" class="chart"></div>
+  </section>
 
-  // Product B（普通产品）
-  { date: "2025-02-01", product: "B", return: 200, benchmark: false },
-  { date: "2025-02-02", product: "B", return: 180, benchmark: false },
-  { date: "2025-02-03", product: "B", return: 220, benchmark: false },
-  { date: "2025-03-01", product: "B", return: 195, benchmark: false },
+  <section>
+    <h2>筛选结果明细表</h2>
+    <p class="tip">表格按周五排列，列展示产品 Return。点击柱状图或折线（含数据点、图例）即可筛选对应产品，拖拽折线图可筛选时间范围。</p>
+    <div id="pivot-table" class="table-wrapper"></div>
+  </section>
 
-  // Product C（普通产品）
-  { date: "2025-03-01", product: "C", return: 80,  benchmark: false },
-  { date: "2025-03-02", product: "C", return: 90,  benchmark: false },
-  { date: "2025-03-03", product: "C", return: 85,  benchmark: false },
+  <script>
+    (function () {
+      const parseDate = d3.timeParse('%Y-%m-%d');
+      const formatDate = d3.timeFormat('%Y-%m-%d');
+      const formatPercent = d3.format('+.2%');
 
-  // 另一个 Benchmark（可多个）
-  { date: "2025-01-01", product: "Benchmark_Index", return: 105, benchmark: true },
-  { date: "2025-02-01", product: "Benchmark_Index", return: 198, benchmark: true },
-  { date: "2025-03-01", product: "Benchmark_Index", return: 192, benchmark: true }
-]
-.map(d => ({ ...d, date: new Date(d.date) }));  // 转成 Date 对象
-// ================== Crossfilter ==================
-const cf = crossfilter(data);
-const dims = {
-  product: cf.dimension(d => d.product),
-  date: cf.dimension(d => d.date),
-  all: cf.dimension(d => d)
-};
+      const data = [
+        { date: '2024-12-27', product: 'Product A', return: 0.008, benchmark: false },
+        { date: '2025-01-03', product: 'Product A', return: 0.011, benchmark: false },
+        { date: '2025-01-10', product: 'Product A', return: -0.004, benchmark: false },
+        { date: '2025-01-17', product: 'Product A', return: 0.006, benchmark: false },
+        { date: '2025-01-24', product: 'Product A', return: 0.012, benchmark: false },
+        { date: '2025-01-31', product: 'Product A', return: 0.003, benchmark: false },
+        { date: '2025-02-07', product: 'Product A', return: -0.002, benchmark: false },
 
-// 预计算每个 product 的 return 总和，用于排序
-const productReturnSum = dims.product.group().reduceSum(d => d.return).all();
-productReturnSum.sort((a, b) => b.value - a.value);
-const orderedProducts = productReturnSum.map(d => d.key);
+        { date: '2024-12-27', product: 'Product B', return: 0.006, benchmark: false },
+        { date: '2025-01-03', product: 'Product B', return: 0.014, benchmark: false },
+        { date: '2025-01-10', product: 'Product B', return: 0.007, benchmark: false },
+        { date: '2025-01-17', product: 'Product B', return: -0.003, benchmark: false },
+        { date: '2025-01-24', product: 'Product B', return: 0.009, benchmark: false },
+        { date: '2025-01-31', product: 'Product B', return: 0.011, benchmark: false },
+        { date: '2025-02-07', product: 'Product B', return: 0.004, benchmark: false },
 
-// ================== Bar Chart (按 return 总和降序) ==================
-const barChart = new dc.BarChart("#bar-chart")
-  .width(600)
-  .height(300)
-  .dimension(dims.product)
-  .group(dims.product.group().reduceSum(d => d.return))
-  .x(d3.scaleBand().domain(orderedProducts))
-  .xUnits(dc.units.ordinal)
-  .ordering(d => -d.value)
-  .elasticY(true)
-  .margins({ top: 10, right: 50, bottom: 50, left: 50 })
+        { date: '2024-12-27', product: 'Product C', return: -0.002, benchmark: false },
+        { date: '2025-01-03', product: 'Product C', return: 0.005, benchmark: false },
+        { date: '2025-01-10', product: 'Product C', return: 0.008, benchmark: false },
+        { date: '2025-01-17', product: 'Product C', return: 0.002, benchmark: false },
+        { date: '2025-01-24', product: 'Product C', return: 0.006, benchmark: false },
+        { date: '2025-01-31', product: 'Product C', return: 0.004, benchmark: false },
+        { date: '2025-02-07', product: 'Product C', return: -0.001, benchmark: false },
 
-  .colorAccessor(d => {
-    if (d.key === 'Benchmark_Index') return 'benchmark_index';
-    return 'normal';
-  })
-  .colors(d3.scaleOrdinal()
-    .domain(['benchmark_index', 'benchmark', 'normal'])
-    .range(['#2ecc71', '#d63939', d3.schemeCategory10[0]])
-  );
-barChart.on('pretransition', chart => {
-  chart.selectAll('rect.bar').attr('fill', d => {
-    if (d.x === 'Benchmark_Index') {
-      return '#2ecc71'; // 绿色
-    } else {
-      return  '#d63939';
-    }
-  });
-  });
-// ================== Line Chart (修复：先创建，再 compose) ==================
-const lineChart = new dc.CompositeChart("#line-chart");
+        { date: '2024-12-27', product: 'Benchmark_Index', return: 0.007, benchmark: true },
+        { date: '2025-01-03', product: 'Benchmark_Index', return: 0.009, benchmark: true },
+        { date: '2025-01-10', product: 'Benchmark_Index', return: 0.003, benchmark: true },
+        { date: '2025-01-17', product: 'Benchmark_Index', return: 0.004, benchmark: true },
+        { date: '2025-01-24', product: 'Benchmark_Index', return: 0.006, benchmark: true },
+        { date: '2025-01-31', product: 'Benchmark_Index', return: 0.005, benchmark: true },
+        { date: '2025-02-07', product: 'Benchmark_Index', return: 0.002, benchmark: true }
+      ].map(d => ({ ...d, date: parseDate(d.date) }));
 
-// 先配置主图
-lineChart
-  .width(800)
-  .height(350)
-  .x(d3.scaleTime().domain(d3.extent(data, d => d.date)))
-  .xAxisLabel("Date")
-  .yAxisLabel("Return")
-  .elasticY(true)
-  .margins({ top: 10, right: 50, bottom: 50, left: 60 })
-  .brushOn(false)
-  .legend(dc.legend().x(60).y(20).itemHeight(13).gap(5));
-  
+      const cf = crossfilter(data);
+      const dims = {
+        product: cf.dimension(d => d.product),
+        date: cf.dimension(d => d.date),
+        all: cf.dimension(d => d)
+      };
 
-// 动态生成每条产品折线图（关键：使用 lineChart 自身）
-lineChart.compose(
-  orderedProducts.map(product => {
-    const productGroup = dims.date.group().reduceSum(d => d.product === product ? d.return : 0);
-    return new dc.LineChart(lineChart)
-      .group(productGroup, product)
-      .renderArea(false)  // 关闭黑色填充
-      .renderDataPoints({ radius: 4, fillOpacity: 0.8 })
-      .colors(d3.schemeCategory10[orderedProducts.indexOf(product) % 10])
-      .title(d => `${product}: ${d.value}`);
-  })
-);
-lineChart.on('pretransition', chart => {
-  chart.selectAll('path.line')
-       .attr('stroke-width', 2.5)
-       .attr('stroke-linecap', 'round')
-       .attr('fill', 'none');
-       });
-// 可选：统一颜色
-// lineChart.on('pretransition', chart => {
-//   chart.selectAll('.line').attr('stroke', (d, i) => d3.schemeCategory10[i % 10]);
-// });
-// ------------------- 1. Data Count -------------------
-const dataCount = dc.dataCount('#data-count')
-  .dimension(cf)           // 整个 crossfilter
-  .group(cf.groupAll())    // 所有记录
-  .html({
-    some: '<strong>%filter-count</strong> 条已选（共 <strong>%total-count</strong> 条）' +
-          ' | <a href="javascript:dc.filterAll(); dc.redrawAll();">重置所有</a>',
-    all: '共 <strong>%total-count</strong> 条记录。点击图表开始过滤。'
-  });
+      const productGroup = dims.product.group().reduceSum(d => d.return);
+      const orderedProducts = productGroup.all()
+        .slice()
+        .sort((a, b) => b.value - a.value)
+        .map(d => d.key);
+
+      const barChart = new dc.BarChart('#bar-chart');
+      barChart
+        .width(860)
+        .height(360)
+        .dimension(dims.product)
+        .group(productGroup)
+        .x(d3.scaleBand().domain(orderedProducts))
+        .xUnits(dc.units.ordinal)
+        .gap(12)
+        .outerPadding(0.25)
+        .brushOn(false)
+        .elasticY(true)
+        .renderHorizontalGridLines(true)
+        .colorAccessor(d => d.key === 'Benchmark_Index' ? 'benchmark' : 'product')
+        .colors(d3.scaleOrdinal()
+          .domain(['benchmark', 'product'])
+          .range(['#2f9e44', '#4dabf7']))
+        .title(d => `${d.key}: ${(d.value * 100).toFixed(2)}%`);
+
+      barChart.yAxis().tickFormat(d3.format('.0%'));
+      barChart.xAxis().tickFormat(d => d);
+
+      const lineChart = new dc.CompositeChart('#line-chart');
+      lineChart
+        .width(960)
+        .height(380)
+        .margins({ top: 20, right: 20, bottom: 50, left: 60 })
+        .dimension(dims.date)
+        .x(d3.scaleTime().domain(d3.extent(data, d => d.date)))
+        .xUnits(d3.timeWeek.every(1))
+        .renderHorizontalGridLines(true)
+        .renderVerticalGridLines(true)
+        .elasticY(true)
+        .brushOn(true)
+        .legend(dc.legend().x(70).y(10).itemHeight(15).gap(6))
+        .yAxisLabel('Weekly Return')
+        .xAxisLabel('Week Ending (Friday)');
+
+      const seriesCharts = orderedProducts.map((product, index) => {
+        const group = dims.date.group().reduceSum(d => (d.product === product ? d.return : 0));
+        return new dc.LineChart(lineChart)
+          .group(group, product)
+          .defined(d => d.value !== undefined && d.value !== null)
+          .valueAccessor(d => d.value)
+          .renderArea(false)
+          .ordinalColors([d3.schemeTableau10[index % 10]])
+          .renderDataPoints({ radius: 4, fillOpacity: 0.9, strokeOpacity: 0 })
+          .title(d => `${product} | ${formatDate(d.key)}: ${formatPercent(d.value)}`);
+      });
+
+      lineChart.compose(seriesCharts);
+      lineChart.yAxis().tickFormat(d3.format('.1%'));
+      lineChart.xAxis().tickFormat(d3.timeFormat('%m-%d'));
+
+      const dataCount = dc.dataCount('#data-count')
+        .dimension(cf)
+        .group(cf.groupAll())
+        .html({
+          some: '<strong>%filter-count</strong> 条已选（共 <strong>%total-count</strong> 条）',
+          all: '共 <strong>%total-count</strong> 条记录，点击图表开始筛选。'
+        });
+
+      const tableContainer = d3.select('#pivot-table');
+
+      function renderTable() {
+        const filteredRows = dims.all.top(Infinity);
+        const productSet = new Set(filteredRows.map(d => d.product));
+        const activeProducts = orderedProducts.filter(p => productSet.has(p));
+
+        const rows = Array.from(d3.rollup(
+          filteredRows,
+          values => {
+            const byProduct = new Map();
+            values.forEach(d => byProduct.set(d.product, d.return));
+            return byProduct;
+          },
+          d => d.date
+        ))
+          .sort((a, b) => d3.ascending(a[0], b[0]));
+
+        tableContainer.selectAll('*').remove();
+
+        if (!rows.length || !activeProducts.length) {
+          tableContainer.append('p').attr('class', 'empty-state').text('当前筛选无匹配数据。');
+          return;
+        }
+
+        const table = tableContainer.append('table');
+        const thead = table.append('thead').append('tr');
+        thead.append('th').text('周五日期');
+        activeProducts.forEach(product => thead.append('th').text(product));
+
+        const tbody = table.append('tbody');
+        rows.forEach(([date, values]) => {
+          const tr = tbody.append('tr');
+          tr.append('td').text(formatDate(date));
+          activeProducts.forEach(product => {
+            const value = values.get(product);
+            tr.append('td').text(value === undefined ? '—' : formatPercent(value));
+          });
+        });
+      }
+
+      function wireLineInteractions(chart) {
+        chart.selectAll('g.sub').each(function (_, index) {
+          const product = orderedProducts[index];
+          const sub = d3.select(this);
+          sub.select('path.line')
+            .style('cursor', 'pointer')
+            .on('click', () => {
+              barChart.filter(product);
+              dc.redrawAll();
+            });
+
+          sub.selectAll('circle.dot')
+            .style('cursor', 'pointer')
+            .on('click', event => {
+              event.stopPropagation();
+              barChart.filter(product);
+              dc.redrawAll();
+            });
+        });
+
+        chart.selectAll('.dc-legend .dc-legend-item').style('cursor', 'pointer').on('click', (event, d) => {
+          event.preventDefault();
+          const product = d && (d.name || d);
+          if (product) {
+            barChart.filter(product);
+            dc.redrawAll();
+          }
+        });
+      }
+
+      barChart.on('filtered.pivot-table', renderTable);
+      lineChart.on('filtered.pivot-table', renderTable);
+      lineChart.on('renderlet.series-toggle', wireLineInteractions);
+
+      dc.renderAll();
+      renderTable();
+
+      document.getElementById('reset-all').addEventListener('click', () => {
+        dc.filterAll();
+        dc.redrawAll();
+        renderTable();
+      });
+
+      document.getElementById('reset-bar').addEventListener('click', () => {
+        barChart.filterAll();
+        dc.redrawAll();
+        renderTable();
+      });
+
+      document.getElementById('reset-line').addEventListener('click', () => {
+        lineChart.filterAll();
+        dims.date.filterAll();
+        dc.redrawAll();
+        renderTable();
+      });
+
+      dc.chartRegistry.list().forEach(chart => {
+        chart.on('postRedraw.pivot-table', renderTable);
+      });
+    })();
+  </script>
+</body>
+</html>
