@@ -214,6 +214,7 @@
       };
 
       const productGroup = dims.product.group().reduceSum(d => d.return);
+      const totalReturnGroup = dims.date.group().reduceSum(d => d.return);
       const orderedProducts = productGroup.all()
         .slice()
         .sort((a, b) => b.value - a.value)
@@ -248,11 +249,12 @@
         .margins({ top: 20, right: 20, bottom: 50, left: 60 })
         .dimension(dims.date)
         .x(d3.scaleTime().domain(d3.extent(data, d => d.date)))
-        .xUnits(d3.timeWeek.every(1))
+        .xUnits(d3.timeWeeks)
         .renderHorizontalGridLines(true)
         .renderVerticalGridLines(true)
         .elasticY(true)
         .brushOn(true)
+        .group(totalReturnGroup)
         .legend(dc.legend().x(70).y(10).itemHeight(15).gap(6))
         .yAxisLabel('Weekly Return')
         .xAxisLabel('Week Ending (Friday)');
@@ -260,6 +262,7 @@
       const seriesCharts = orderedProducts.map((product, index) => {
         const group = dims.date.group().reduceSum(d => (d.product === product ? d.return : 0));
         return new dc.LineChart(lineChart)
+          .dimension(dims.date)
           .group(group, product)
           .defined(d => d.value !== undefined && d.value !== null)
           .valueAccessor(d => d.value)
@@ -345,7 +348,7 @@
         chart.selectAll('.dc-legend .dc-legend-item').style('cursor', 'pointer').on('click', (event, d) => {
           event.preventDefault();
           const product = d && (d.name || d);
-          if (product) {
+          if (product && orderedProducts.includes(product)) {
             barChart.filter(product);
             dc.redrawAll();
           }
