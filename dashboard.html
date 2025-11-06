@@ -210,12 +210,26 @@
       const dims = {
         product: cf.dimension(d => d.product),
         date: cf.dimension(d => d.date),
-        series: cf.dimension(d => [d.product, d.date]),
         all: cf.dimension(d => d)
       };
 
       const productGroup = dims.product.group().reduceSum(d => d.return);
-      const seriesGroup = dims.series.group().reduceSum(d => d.return);
+      const returnsByDateGroup = dims.date.group().reduce(
+        (acc, d) => {
+          acc[d.product] = (acc[d.product] || 0) + d.return;
+          return acc;
+        },
+        (acc, d) => {
+          if (acc[d.product] !== undefined) {
+            acc[d.product] -= d.return;
+            if (Math.abs(acc[d.product]) < 1e-12) {
+              delete acc[d.product];
+            }
+          }
+          return acc;
+        },
+        () => ({})
+      );
       const orderedProducts = productGroup.all()
         .slice()
         .sort((a, b) => b.value - a.value)
@@ -249,22 +263,12 @@
       barChart.yAxis().tickFormat(d3.format('.0%'));
       barChart.xAxis().tickFormat(d => d);
 
-      const lineChart = new dc.SeriesChart('#line-chart');
+      const lineChart = new dc.CompositeChart('#line-chart');
       lineChart
         .width(960)
         .height(380)
         .margins({ top: 20, right: 20, bottom: 50, left: 60 })
-        .chart(subChart => new dc.LineChart(subChart)
-          .curve(d3.curveMonotoneX)
-          .renderArea(false)
-          .renderDataPoints({ radius: 4, fillOpacity: 0.9, strokeOpacity: 0 })
-          .defined(d => d.value !== undefined && d.value !== null)
-        )
-        .dimension(dims.series)
-        .group(seriesGroup)
-        .seriesAccessor(d => d.key[0])
-        .keyAccessor(d => d.key[1])
-        .valueAccessor(d => d.value)
+        .dimension(dims.date)
         .x(d3.scaleTime().domain(d3.extent(data, d => d.date)))
         .xUnits(d3.timeWeeks)
         .renderHorizontalGridLines(true)
@@ -272,11 +276,26 @@
         .elasticY(true)
         .brushOn(true)
         .legend(dc.legend().x(70).y(10).itemHeight(15).gap(6))
-        .colorAccessor(d => d.key[0])
-        .colors(colorScale)
+        .shareColors(false)
         .yAxisLabel('Weekly Return')
-        .xAxisLabel('Week Ending (Friday)')
-        .title(d => `${d.key[0]} | ${formatDate(d.key[1])}: ${formatPercent(d.value)}`);
+        .xAxisLabel('Week Ending (Friday)');
+
+      const seriesCharts = orderedProducts.map(product =>
+        new dc.LineChart(lineChart)
+          .dimension(dims.date)
+          .group(returnsByDateGroup, product)
+          .valueAccessor(d => (d.value && d.value[product] !== undefined ? d.value[product] : 0))
+          .renderArea(false)
+          .defined(d => d.value && d.value[product] !== undefined)
+          .ordinalColors([colorScale(product)])
+          .renderDataPoints({ radius: 4, fillOpacity: 0.9, strokeOpacity: 0 })
+          .title(d => {
+            const value = d.value && d.value[product];
+            return `${product} | ${formatDate(d.key)}: ${value === undefined ? '—' : formatPercent(value)}`;
+          })
+      );
+
+      lineChart.compose(seriesCharts);
       lineChart.yAxis().tickFormat(d3.format('.1%'));
       lineChart.xAxis().tickFormat(d3.timeFormat('%m-%d'));
       lineChart.on('pretransition.style', chart => {
@@ -336,34 +355,31 @@
       }
 
       function wireLineInteractions(chart) {
-        chart.selectAll('g.series').each(function (seriesData) {
-          const product = seriesData && seriesData.key;
+        chart.selectAll('g.sub').each(function (seriesData) {
+          const product = seriesData && seriesData.name;
           if (!product || !orderedProducts.includes(product)) {
             return;
           }
 
+          const toggleFilter = () => {
+            if (barChart.hasFilter(product) && barChart.filters().length === 1) {
+              barChart.filterAll();
+            } else {
+              barChart.filter(product);
+            }
+            dc.redrawAll();
+          };
+
           const seriesNode = d3.select(this);
           seriesNode.select('path.line')
             .style('cursor', 'pointer')
-            .on('click.series-filter', () => {
-              if (barChart.hasFilter(product) && barChart.filters().length === 1) {
-                barChart.filterAll();
-              } else {
-                barChart.filter(product);
-              }
-              dc.redrawAll();
-            });
+            .on('click.series-filter', toggleFilter);
 
           seriesNode.selectAll('circle.dot')
             .style('cursor', 'pointer')
             .on('click.series-filter', event => {
               event.stopPropagation();
-              if (barChart.hasFilter(product) && barChart.filters().length === 1) {
-                barChart.filterAll();
-              } else {
-                barChart.filter(product);
-              }
-              dc.redrawAll();
+              toggleFilter();
             });
         });
 
@@ -404,7 +420,6 @@
 
       document.getElementById('reset-line').addEventListener('click', () => {
         lineChart.filterAll();
-        dims.series.filterAll();
         dims.date.filterAll();
         dc.redrawAll();
         renderTable();
