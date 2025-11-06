@@ -259,6 +259,27 @@
           .domain(['benchmark', 'product'])
           .range(['#2f9e44', '#4dabf7']))
         .title(d => `${d.key}: ${(d.value * 100).toFixed(2)}%`);
+      barChart.on('pretransition.center-zero-axis', chart => {
+        const yScale = chart.y();
+        let xAxisG = chart.select('g.axis.x');
+        if (xAxisG.empty()) {
+          xAxisG = chart.select('g.x.axis');
+        }
+        if (!yScale || xAxisG.empty()) return;
+
+        const zeroY = yScale(0);
+        if (!isFinite(zeroY)) return;
+
+        xAxisG.attr('transform', `translate(0,${zeroY})`);
+
+        chart.selectAll('rect.bar').each(function (d) {
+          const value = d.y !== undefined ? d.y : (d.data && d.data.value ? d.data.value : 0);
+          const bar = d3.select(this);
+          const y = value >= 0 ? yScale(value) : zeroY;
+          const height = Math.abs(yScale(value) - zeroY);
+          bar.attr('y', y).attr('height', height);
+        });
+      });
 
       barChart.yAxis().tickFormat(d3.format('.0%'));
       barChart.xAxis().tickFormat(d => d);
